@@ -52,7 +52,7 @@
       background: #15803d;
       color: white;
       padding: 10px 14px;
-      font-size: 16px;
+      font-size: 15px;
       font-weight: bold;
       align-items: center;
       gap: 10px;
@@ -61,14 +61,17 @@
     }
     .nav-banner .turn-icon { font-size: 24px; }
 
-    /* Search & Mode Selector */
+    /* Search & Container */
+    .search-container {
+      position: relative;
+      background: var(--card-bg);
+      z-index: 1500;
+      border-bottom: 1px solid var(--border-color);
+    }
     .search-box {
       display: flex;
       gap: 6px;
       padding: 8px;
-      background: var(--card-bg);
-      z-index: 1000;
-      border-bottom: 1px solid var(--border-color);
     }
     .search-box input {
       flex: 1;
@@ -87,6 +90,36 @@
       border-radius: 6px;
       font-size: 12px;
       cursor: pointer;
+    }
+
+    /* Search Suggestions List Overlay */
+    .suggestions-list {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--card-bg);
+      max-height: 220px;
+      overflow-y: auto;
+      border: 1px solid var(--border-color);
+      border-top: none;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+      z-index: 2500;
+    }
+    .suggestion-item {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 12px;
+      cursor: pointer;
+      line-height: 1.4;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .suggestion-item:hover, .suggestion-item:active {
+      background: var(--accent-color);
+      color: white;
     }
 
     /* Dashboard Grid */
@@ -161,7 +194,6 @@
       background: #000;
     }
 
-    /* Vehicle Marker Rotation Style */
     .vehicle-icon {
       transition: transform 0.3s ease;
       font-size: 28px;
@@ -169,7 +201,6 @@
       line-height: 28px;
     }
 
-    /* Hide Leaflet Routing Panel default UI */
     .leaflet-routing-container { display: none !important; }
   </style>
 </head>
@@ -191,19 +222,23 @@
     </div>
   </div>
 
-  <!-- Search Destination & Mode Selection -->
-  <div class="search-box">
-    <select id="transport-mode" class="mode-select" onchange="changeTransportMode()">
-      <option value="car">🚗 รถยนต์ (Car)</option>
-      <option value="motorcycle">🛵 มอเตอร์ไซค์ (Bike)</option>
-      <option value="bicycle">🚲 จักรยาน (Bicycle)</option>
-      <option value="walk">🚶 เดิน/วิ่ง (Walk)</option>
-      <option value="boat">🛥️ เรือ (Boat)</option>
-      <option value="plane">✈️ เครื่องบิน (Plane)</option>
-    </select>
-    <input type="text" id="dest-input" placeholder="พิมพ์ชื่อสถานที่ปลายทาง..." onkeypress="if(event.key==='Enter') searchDestination()">
-    <button class="btn primary" onclick="searchDestination()">นำทาง</button>
-    <button class="btn stop" onclick="cancelNavigation()">ยกเลิก</button>
+  <!-- Search & Suggestions Box -->
+  <div class="search-container">
+    <div class="search-box">
+      <select id="transport-mode" class="mode-select" onchange="changeTransportMode()">
+        <option value="car">🚗 รถยนต์ (Car)</option>
+        <option value="motorcycle">🛵 มอเตอร์ไซค์ (Bike)</option>
+        <option value="bicycle">🚲 จักรยาน (Bicycle)</option>
+        <option value="walk">🚶 เดิน/วิ่ง (Walk)</option>
+        <option value="boat">🛥️ เรือ (Boat)</option>
+        <option value="plane">✈️ เครื่องบิน (Plane)</option>
+      </select>
+      <input type="text" id="dest-input" placeholder="พิมพ์สถานที่ แล้วกดค้นหา..." onkeypress="if(event.key==='Enter') searchDestination()">
+      <button class="btn primary" onclick="searchDestination()">🔍 ค้นหา</button>
+      <button class="btn stop" onclick="cancelNavigation()">ยกเลิก</button>
+    </div>
+    <!-- กล่องแสดงรายการตัวเลือกสถานที่ -->
+    <div id="suggestions" class="suggestions-list"></div>
   </div>
 
   <!-- Real-time Dashboard -->
@@ -258,21 +293,18 @@
     let currentHeading = 0;
     let currentSpeed = 0;
     let maxSpeed = 0;
-    let totalDistance = 0;
     let selectedMode = 'car';
     let routingControl = null;
     let currentInstructions = [];
     let nextInstructionIndex = 0;
     let wakeLock = null;
 
-    // Vehicle Emoji Maps
     const vehicleIcons = { car: '🚗', motorcycle: '🛵', bicycle: '🚲', walk: '🚶', boat: '🛥️', plane: '✈️' };
 
     // Initialize Map
     const map = L.map('map', { zoomControl: false }).setView([currentLat, currentLng], 16);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-    // Custom Rotatable Marker
     function createVehicleMarker(emoji, heading) {
       return L.divIcon({
         className: 'custom-vehicle-marker',
@@ -286,16 +318,12 @@
       icon: createVehicleMarker(vehicleIcons[selectedMode], currentHeading)
     }).addTo(map);
 
-    // Request Screen Wake Lock (ป้องกันจอดับ)
     async function requestWakeLock() {
       try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await navigator.wakeLock.request('screen');
-        }
-      } catch (err) { console.log('Wake Lock Error:', err); }
+        if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+      } catch (err) {}
     }
 
-    // TTS Voice Assistant
     function speakText(text) {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -306,40 +334,63 @@
       }
     }
 
-    // Mode Switcher
     function changeTransportMode() {
       selectedMode = document.getElementById('transport-mode').value;
       document.getElementById('osd-mode').innerText = `${vehicleIcons[selectedMode]} ${selectedMode.toUpperCase()} MODE`;
       vehicleMarker.setIcon(createVehicleMarker(vehicleIcons[selectedMode], currentHeading));
-      
-      const unitEl = document.getElementById('speed-unit');
-      if (selectedMode === 'boat') unitEl.innerText = 'Knots';
-      else unitEl.innerText = 'km/h';
+      document.getElementById('speed-unit').innerText = (selectedMode === 'boat') ? 'Knots' : 'km/h';
     }
 
-    // OSD & Weather Update
     setInterval(() => {
       document.getElementById('osd-datetime').innerText = new Date().toLocaleString('th-TH');
     }, 1000);
 
-    // Turn-by-Turn Navigation via OSRM & Nominatim Search
+    // 🔍 ระบบค้นหา + แสดงช้อยตัวเลือก (Suggestions)
     async function searchDestination() {
       const query = document.getElementById('dest-input').value;
-      if (!query) return;
+      const suggestionsBox = document.getElementById('suggestions');
+      
+      if (!query.trim()) return;
 
-      speakText(`กำลังค้นหาเส้นทางไป ${query}`);
+      suggestionsBox.innerHTML = '<div class="suggestion-item">🔍 กำลังค้นหา...</div>';
+      suggestionsBox.style.display = 'block';
+
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=th&limit=5&q=${encodeURIComponent(query)}`);
         const data = await res.json();
-        if (data.length === 0) { alert("ไม่พบสถานที่ดังกล่าว"); return; }
+        
+        suggestionsBox.innerHTML = '';
 
-        const destLat = parseFloat(data[0].lat);
-        const destLng = parseFloat(data[0].lon);
+        if (data.length === 0) {
+          suggestionsBox.innerHTML = '<div class="suggestion-item">❌ ไม่พบสถานที่ที่คุณค้นหา</div>';
+          return;
+        }
 
-        startRouting(destLat, destLng);
+        // สร้างรายการช้อยให้ผู้ใช้เลือก
+        data.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'suggestion-item';
+          div.innerHTML = `📍 <div>${item.display_name}</div>`;
+          div.onclick = () => {
+            selectDestination(parseFloat(item.lat), parseFloat(item.lon), item.display_name);
+          };
+          suggestionsBox.appendChild(div);
+        });
+
       } catch (e) {
-        alert("เกิดข้อผิดพลาดในการค้นหาเส้นทาง");
+        suggestionsBox.innerHTML = '<div class="suggestion-item">เกิดข้อผิดพลาดในการเชื่อมต่อ</div>';
       }
+    }
+
+    // เมื่อผู้ใช้กดเลือกสถานที่ในรายการช้อย
+    function selectDestination(destLat, destLng, displayName) {
+      const suggestionsBox = document.getElementById('suggestions');
+      suggestionsBox.style.display = 'none'; // ซ่อนกล่องช้อย
+      
+      // ดึงชื่อสถานที่สั้นๆ มาแสดงในช่องอินพุต
+      document.getElementById('dest-input').value = displayName.split(',')[0];
+      
+      startRouting(destLat, destLng);
     }
 
     function startRouting(destLat, destLng) {
@@ -368,8 +419,8 @@
         currentInstructions = routes.instructions;
         nextInstructionIndex = 0;
         document.getElementById('nav-banner').style.display = 'flex';
-        updateNavigationGuidance(0);
-        speakText("เริ่มการนำทาง มุ่งหน้าตามเส้นทางที่กำหนด");
+        updateNavigationGuidance();
+        speakText("เริ่มการนำทาง มุ่งหน้าตามเส้นทางที่เลือก");
       });
     }
 
@@ -378,116 +429,6 @@
         map.removeControl(routingControl);
         routingControl = null;
       }
+      document.getElementById('suggestions').style.display = 'none';
       document.getElementById('nav-banner').style.display = 'none';
       speakText("ยกเลิกการนำทางเรียบร้อยแล้ว");
-    }
-
-    function updateNavigationGuidance(distMoved) {
-      if (!currentInstructions || currentInstructions.length === 0) return;
-
-      const currentStep = currentInstructions[nextInstructionIndex];
-      if (!currentStep) return;
-
-      document.getElementById('nav-text').innerText = currentStep.text || "ตรงไปตามเส้นทาง";
-      document.getElementById('nav-dist').innerText = `ระยะทางประมาณ ${Math.round(currentStep.distance)} เมตร`;
-
-      // เสียงเตือนล่วงหน้า 150 เมตรก่อนถึงทางเลี้ยว
-      if (currentStep.distance <= 150 && !currentStep.spoken) {
-        speakText(`อีก 150 เมตร ${currentStep.text}`);
-        currentStep.spoken = true;
-      }
-
-      if (currentStep.distance <= 20) {
-        nextInstructionIndex++;
-      }
-    }
-
-    // Distance Calculation Formula
-    function calculateDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371e3;
-      const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
-      const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(Δφ/2)*Math.sin(Δφ/2) + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)*Math.sin(Δλ/2);
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
-
-    // GPS Position Tracking Handler
-    function handlePosition(position) {
-      const { latitude, longitude, speed, heading, accuracy, altitude } = position.coords;
-      
-      currentLat = latitude; currentLng = longitude;
-      if (heading !== null && !isNaN(heading)) currentHeading = heading;
-
-      // Speed Conversions
-      let rawSpeedKmh = speed ? (speed * 3.6) : 0;
-      if (selectedMode === 'boat') currentSpeed = rawSpeedKmh * 0.539957; // Knots
-      else currentSpeed = rawSpeedKmh;
-
-      if (currentSpeed > maxSpeed) maxSpeed = currentSpeed;
-
-      document.getElementById('speed').innerText = currentSpeed.toFixed(1);
-      document.getElementById('max-speed').innerText = maxSpeed.toFixed(1);
-      document.getElementById('accuracy').innerText = accuracy ? Math.round(accuracy) : '--';
-      document.getElementById('altitude').innerText = altitude ? Math.round(altitude) : '--';
-
-      // Move & Rotate Marker
-      const newPos = [latitude, longitude];
-      vehicleMarker.setLatLng(newPos);
-      vehicleMarker.setIcon(createVehicleMarker(vehicleIcons[selectedMode], currentHeading));
-      map.panTo(newPos);
-
-      // Update Navigation Distance
-      if (routingControl) {
-        updateNavigationGuidance();
-      }
-    }
-
-    function toggleTracking() {
-      const btn = document.getElementById('toggle-btn');
-      if (!isTracking) {
-        if ("geolocation" in navigator) {
-          requestWakeLock();
-          speakText(`เริ่มเปิดระบบติดตามพิกัด โหมด${selectedMode}`);
-          watchId = navigator.geolocation.watchPosition(handlePosition, null, { enableHighAccuracy: true, maximumAge: 0 });
-          isTracking = true;
-          btn.innerText = "STOP TRACKING";
-          btn.classList.add("stop");
-          btn.classList.remove("primary");
-        }
-      } else {
-        navigator.geolocation.clearWatch(watchId);
-        isTracking = false;
-        btn.innerText = "START TRACKING";
-        btn.classList.remove("stop");
-        btn.classList.add("primary");
-      }
-    }
-
-    // Camera & Helpers
-    let cameraStream = null;
-    async function toggleCamera() {
-      const videoEl = document.getElementById('camera-preview');
-      const btnCam = document.getElementById('btn-camera');
-      if (!cameraStream) {
-        try { cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); }
-        catch(e) { cameraStream = await navigator.mediaDevices.getUserMedia({ video: true }); }
-        videoEl.srcObject = cameraStream; videoEl.style.display = 'block'; btnCam.classList.add('active');
-      } else {
-        cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; videoEl.style.display = 'none'; btnCam.classList.remove('active');
-      }
-    }
-
-    function toggleDayNight() {
-      document.body.classList.toggle('light-mode');
-    }
-
-    function speakCurrentLocation() {
-      speakText(`พิกัดปัจจุบัน ละติจูด ${currentLat.toFixed(4)} ลองจิจูด ${currentLng.toFixed(4)} ความเร็ว ${currentSpeed.toFixed(1)}`);
-    }
-
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
-    }
-  </script>
-</body>
-</html>
