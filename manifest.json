@@ -1,7 +1,7 @@
 {
-  "name": "GPS Speedometer & Dashcam",
-  "short_name": "GPS Dashcam",
-  "description": "แอปจับความเร็ว GPS แจ้งเตือนกล้องตรวจจับความเร็ว และกล้องหน้ารถแบบ Offline 100%",
+  "name": "GPS Turn-by-Turn Navigation & Dashcam",
+  "short_name": "GPS Nav",
+  "description": "ระบบนำทางบอกทางเลี้ยว แจ้งเตือนกล้องความเร็ว และกล้องหน้ารถ PWA",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f172a",
