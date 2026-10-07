@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>GPS Speedometer & Dashcam Assistant</title>
+  <title>GPS Turn-by-Turn Navigation & Dashcam</title>
   
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <!-- Leaflet CSS -->
+  <!-- Leaflet CSS & Routing Machine CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+
   <style>
     :root {
       --bg-color: #0f172a;
@@ -38,42 +39,69 @@
       justify-content: space-between;
       align-items: center;
       padding: 6px 12px;
-      background: rgba(0,0,0,0.8);
+      background: rgba(0,0,0,0.85);
       color: #00ffcc;
       font-family: monospace;
       font-size: 11px;
       z-index: 2000;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
     }
 
-    /* Alert Banner Top */
-    .alert-banner {
+    /* Turn Guidance Banner */
+    .nav-banner {
       display: none;
-      background: #dc2626;
+      background: #15803d;
       color: white;
-      padding: 8px;
-      text-align: center;
+      padding: 10px 14px;
+      font-size: 16px;
       font-weight: bold;
-      font-size: 14px;
-      animation: pulse 0.8s infinite alternate;
+      align-items: center;
+      gap: 10px;
       z-index: 2000;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
-    @keyframes pulse { from { opacity: 0.7; } to { opacity: 1; } }
+    .nav-banner .turn-icon { font-size: 24px; }
 
-    /* Main Dashboard Grid */
-    .dashboard {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
+    /* Search & Mode Selector */
+    .search-box {
+      display: flex;
       gap: 6px;
       padding: 8px;
       background: var(--card-bg);
+      z-index: 1000;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .search-box input {
+      flex: 1;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: rgba(0,0,0,0.2);
+      color: var(--text-color);
+      font-size: 13px;
+    }
+    .mode-select {
+      background: #334155;
+      color: white;
+      border: none;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* Dashboard Grid */
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      padding: 6px;
+      background: var(--card-bg);
       border-bottom: 1px solid var(--border-color);
       z-index: 1000;
-      transition: all 0.3s ease;
     }
     .card {
       background: rgba(0,0,0,0.2);
-      padding: 6px;
+      padding: 4px;
       border-radius: 6px;
       text-align: center;
       border: 1px solid var(--border-color);
@@ -83,11 +111,11 @@
       background: var(--accent-color);
       color: white;
       border: none;
+      padding: 8px;
     }
-    .card .label { font-size: 10px; text-transform: uppercase; opacity: 0.8; margin-bottom: 2px; }
-    .card .value { font-size: 20px; font-weight: 800; line-height: 1; }
-    .card.main .value { font-size: 46px; font-weight: 900; }
-    .card .unit { font-size: 10px; opacity: 0.8; }
+    .card .label { font-size: 9px; text-transform: uppercase; opacity: 0.8; }
+    .card .value { font-size: 18px; font-weight: 800; }
+    .card.main .value { font-size: 40px; font-weight: 900; }
 
     /* Controls Bar */
     .controls {
@@ -114,38 +142,35 @@
     .btn.primary { background: #22c55e; }
     .btn.stop { background: #ef4444; }
     .btn.active { background: #0284c7; }
-    .status-badge {
-      font-size: 10px;
-      padding: 4px 8px;
-      border-radius: 12px;
-      background: #334155;
-      color: #cbd5e1;
-      display: flex;
-      align-items: center;
-      margin-left: auto;
-      flex-shrink: 0;
-    }
-    .status-badge.active { background: #15803d; color: #bbf7d0; }
 
-    /* Map & Camera Container */
+    /* Viewport */
     .viewport { flex: 1; position: relative; width: 100%; height: 100%; }
     #map { width: 100%; height: 100%; background: #090d16; z-index: 1; }
     
-    /* PIP Camera View */
     #camera-preview {
       position: absolute;
       bottom: 12px;
       right: 12px;
-      width: 140px;
-      height: 105px;
+      width: 130px;
+      height: 95px;
       border-radius: 8px;
       border: 2px solid var(--accent-color);
       z-index: 1001;
       object-fit: cover;
       display: none;
       background: #000;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     }
+
+    /* Vehicle Marker Rotation Style */
+    .vehicle-icon {
+      transition: transform 0.3s ease;
+      font-size: 28px;
+      text-align: center;
+      line-height: 28px;
+    }
+
+    /* Hide Leaflet Routing Panel default UI */
+    .leaflet-routing-container { display: none !important; }
   </style>
 </head>
 <body>
@@ -153,18 +178,40 @@
   <!-- OSD Overlay Header -->
   <div class="osd-bar">
     <span id="osd-datetime">00/00/0000 00:00:00</span>
-    <span id="osd-weather">🌡️ --°C Loading...</span>
+    <span id="osd-mode">🚗 CAR MODE</span>
+    <span id="osd-weather">🌡️ --°C</span>
   </div>
 
-  <!-- Alert Banner -->
-  <div id="alert-banner" class="alert-banner">🚨 เตือน: เข้าใกล้กล้องตรวจจับความเร็ว!</div>
+  <!-- Turn-by-Turn Navigation Banner -->
+  <div id="nav-banner" class="nav-banner">
+    <span class="turn-icon" id="nav-icon">⬆️</span>
+    <div>
+      <div id="nav-text">กำลังค้นหาเส้นทาง...</div>
+      <div id="nav-dist" style="font-size: 12px; opacity: 0.9;">-- ม.</div>
+    </div>
+  </div>
+
+  <!-- Search Destination & Mode Selection -->
+  <div class="search-box">
+    <select id="transport-mode" class="mode-select" onchange="changeTransportMode()">
+      <option value="car">🚗 รถยนต์ (Car)</option>
+      <option value="motorcycle">🛵 มอเตอร์ไซค์ (Bike)</option>
+      <option value="bicycle">🚲 จักรยาน (Bicycle)</option>
+      <option value="walk">🚶 เดิน/วิ่ง (Walk)</option>
+      <option value="boat">🛥️ เรือ (Boat)</option>
+      <option value="plane">✈️ เครื่องบิน (Plane)</option>
+    </select>
+    <input type="text" id="dest-input" placeholder="พิมพ์ชื่อสถานที่ปลายทาง..." onkeypress="if(event.key==='Enter') searchDestination()">
+    <button class="btn primary" onclick="searchDestination()">นำทาง</button>
+    <button class="btn stop" onclick="cancelNavigation()">ยกเลิก</button>
+  </div>
 
   <!-- Real-time Dashboard -->
   <div class="dashboard" id="dashboard">
     <div class="card main">
       <div class="label">SPEED</div>
       <div class="value" id="speed">0.0</div>
-      <span class="unit">km/h</span>
+      <span style="font-size: 10px;" id="speed-unit">km/h</span>
     </div>
     <div class="card">
       <div class="label">MAX</div>
@@ -184,16 +231,14 @@
     </div>
   </div>
 
-  <!-- Control & Function Panel -->
+  <!-- Controls Panel -->
   <div class="controls">
     <button class="btn primary" id="toggle-btn" onclick="toggleTracking()">START TRACKING</button>
     <button class="btn" id="btn-camera" onclick="toggleCamera()">📷 กล้องหน้ารถ</button>
     <button class="btn" id="btn-rec" onclick="toggleRecord()" disabled>🔴 บันทึกวิดีโอ</button>
     <button class="btn" id="btn-mode" onclick="toggleDayNight()">🌙 โหมดกลางคืน</button>
     <button class="btn" onclick="speakCurrentLocation()">🗣️ บอกตำแหน่ง</button>
-    <button class="btn" onclick="toggleMiniUI()">📱 Mini UI</button>
     <button class="btn" onclick="exportGPX()">💾 EXPORT GPX</button>
-    <div class="status-badge" id="gps-status">GPS: READY</div>
   </div>
 
   <!-- Map Viewport -->
@@ -202,64 +247,55 @@
     <video id="camera-preview" autoplay playsinline muted></video>
   </div>
 
-  <!-- Leaflet JS -->
+  <!-- JS Libraries -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
   <script>
     let watchId = null;
     let isTracking = false;
-    let pathCoordinates = [];
-    let totalDistance = 0;
-    let maxSpeed = 0;
-    let isNightMode = true;
-    let cameraStream = null;
-    let mediaRecorder = null;
-    let recordedChunks = [];
-    let isMiniUI = false;
-
-    // พิกัดกล้องความเร็ว & จุดเสี่ยงอุบัติเหตุ
-    const warningPoints = [
-      { id: 1, name: "กล้องจำกัดความเร็ว 90 km/h", lat: 13.7563, lng: 100.5018, limitSpeed: 90, type: "camera" },
-      { id: 2, name: "จุดเสี่ยงอุบัติเหตุทางแยก", lat: 13.7600, lng: 100.5100, limitSpeed: 60, type: "accident" },
-      { id: 3, name: "กล้องตรวจจับความเร็ว 120 km/h", lat: 13.7450, lng: 100.5200, limitSpeed: 120, type: "camera" }
-    ];
-
-    const alertedPoints = new Set();
-    let alertLoopInterval = null;
     let currentLat = 13.7563, currentLng = 100.5018;
+    let currentHeading = 0;
+    let currentSpeed = 0;
+    let maxSpeed = 0;
+    let totalDistance = 0;
+    let selectedMode = 'car';
+    let routingControl = null;
+    let currentInstructions = [];
+    let nextInstructionIndex = 0;
+    let wakeLock = null;
 
-    // 1. OSD & Weather System
-    setInterval(() => {
-      const now = new Date();
-      document.getElementById('osd-datetime').innerText = now.toLocaleString('th-TH');
-    }, 1000);
+    // Vehicle Emoji Maps
+    const vehicleIcons = { car: '🚗', motorcycle: '🛵', bicycle: '🚲', walk: '🚶', boat: '🛥️', plane: '✈️' };
 
-    async function fetchWeather(lat, lng) {
-      try {
-        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true`);
-        const data = await res.json();
-        if(data.current_weather) {
-          document.getElementById('osd-weather').innerText = `🌡️ ${data.current_weather.temperature}°C (ลม: ${data.current_weather.windspeed} km/h)`;
-        }
-      } catch(e) { console.warn("Weather API Error"); }
+    // Initialize Map
+    const map = L.map('map', { zoomControl: false }).setView([currentLat, currentLng], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+    // Custom Rotatable Marker
+    function createVehicleMarker(emoji, heading) {
+      return L.divIcon({
+        className: 'custom-vehicle-marker',
+        html: `<div class="vehicle-icon" style="transform: rotate(${heading}deg);">${emoji}</div>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      });
     }
 
-    // 2. Initialize Leaflet Map
-    const map = L.map('map', { zoomControl: false }).setView([currentLat, currentLng], 15);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-    const marker = L.marker([currentLat, currentLng]).addTo(map);
-    const pathLine = L.polyline([], { color: '#0284c7', weight: 5, opacity: 0.8 }).addTo(map);
+    let vehicleMarker = L.marker([currentLat, currentLng], {
+      icon: createVehicleMarker(vehicleIcons[selectedMode], currentHeading)
+    }).addTo(map);
 
-    // ปักหมุดกล้อง/จุดเสี่ยง
-    warningPoints.forEach(pt => {
-      const color = pt.type === 'camera' ? 'red' : 'orange';
-      L.circleMarker([pt.lat, pt.lng], { radius: 8, color: color, fillColor: color, fillOpacity: 0.8 }).addTo(map)
-        .bindPopup(`<b>${pt.name}</b><br>จำกัดความเร็ว: ${pt.limitSpeed} km/h`);
-    });
+    // Request Screen Wake Lock (ป้องกันจอดับ)
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (err) { console.log('Wake Lock Error:', err); }
+    }
 
-    fetchWeather(currentLat, currentLng);
-
-    // 3. Text-to-Speech Engine
+    // TTS Voice Assistant
     function speakText(text) {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -270,6 +306,103 @@
       }
     }
 
+    // Mode Switcher
+    function changeTransportMode() {
+      selectedMode = document.getElementById('transport-mode').value;
+      document.getElementById('osd-mode').innerText = `${vehicleIcons[selectedMode]} ${selectedMode.toUpperCase()} MODE`;
+      vehicleMarker.setIcon(createVehicleMarker(vehicleIcons[selectedMode], currentHeading));
+      
+      const unitEl = document.getElementById('speed-unit');
+      if (selectedMode === 'boat') unitEl.innerText = 'Knots';
+      else unitEl.innerText = 'km/h';
+    }
+
+    // OSD & Weather Update
+    setInterval(() => {
+      document.getElementById('osd-datetime').innerText = new Date().toLocaleString('th-TH');
+    }, 1000);
+
+    // Turn-by-Turn Navigation via OSRM & Nominatim Search
+    async function searchDestination() {
+      const query = document.getElementById('dest-input').value;
+      if (!query) return;
+
+      speakText(`กำลังค้นหาเส้นทางไป ${query}`);
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        if (data.length === 0) { alert("ไม่พบสถานที่ดังกล่าว"); return; }
+
+        const destLat = parseFloat(data[0].lat);
+        const destLng = parseFloat(data[0].lon);
+
+        startRouting(destLat, destLng);
+      } catch (e) {
+        alert("เกิดข้อผิดพลาดในการค้นหาเส้นทาง");
+      }
+    }
+
+    function startRouting(destLat, destLng) {
+      if (routingControl) map.removeControl(routingControl);
+
+      let profile = 'car';
+      if (selectedMode === 'bicycle') profile = 'biking';
+      if (selectedMode === 'walk') profile = 'foot';
+
+      routingControl = L.Routing.control({
+        waypoints: [
+          L.latLng(currentLat, currentLng),
+          L.latLng(destLat, destLng)
+        ],
+        router: L.Routing.osrmv1({
+          serviceUrl: `https://router.project-osrm.org/route/v1`,
+          profile: profile
+        }),
+        lineOptions: { styles: [{ color: '#0284c7', weight: 6, opacity: 0.8 }] },
+        addWaypoints: false,
+        createMarker: () => null
+      }).addTo(map);
+
+      routingControl.on('routesfound', function(e) {
+        const routes = e.routes[0];
+        currentInstructions = routes.instructions;
+        nextInstructionIndex = 0;
+        document.getElementById('nav-banner').style.display = 'flex';
+        updateNavigationGuidance(0);
+        speakText("เริ่มการนำทาง มุ่งหน้าตามเส้นทางที่กำหนด");
+      });
+    }
+
+    function cancelNavigation() {
+      if (routingControl) {
+        map.removeControl(routingControl);
+        routingControl = null;
+      }
+      document.getElementById('nav-banner').style.display = 'none';
+      speakText("ยกเลิกการนำทางเรียบร้อยแล้ว");
+    }
+
+    function updateNavigationGuidance(distMoved) {
+      if (!currentInstructions || currentInstructions.length === 0) return;
+
+      const currentStep = currentInstructions[nextInstructionIndex];
+      if (!currentStep) return;
+
+      document.getElementById('nav-text').innerText = currentStep.text || "ตรงไปตามเส้นทาง";
+      document.getElementById('nav-dist').innerText = `ระยะทางประมาณ ${Math.round(currentStep.distance)} เมตร`;
+
+      // เสียงเตือนล่วงหน้า 150 เมตรก่อนถึงทางเลี้ยว
+      if (currentStep.distance <= 150 && !currentStep.spoken) {
+        speakText(`อีก 150 เมตร ${currentStep.text}`);
+        currentStep.spoken = true;
+      }
+
+      if (currentStep.distance <= 20) {
+        nextInstructionIndex++;
+      }
+    }
+
+    // Distance Calculation Formula
     function calculateDistance(lat1, lon1, lat2, lon2) {
       const R = 6371e3;
       const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
@@ -278,76 +411,44 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    // 4. Check Camera Alert & Continuous Warning
-    function checkSpeedCameraAlerts(lat, lng) {
-      let activeAlert = null;
-
-      warningPoints.forEach(pt => {
-        const dist = calculateDistance(lat, lng, pt.lat, pt.lng);
-
-        if (dist <= 200) {
-          activeAlert = { pt, dist };
-          if (!alertedPoints.has(pt.id)) {
-            alertedPoints.add(pt.id);
-            speakText(`ระวัง อีก 200 เมตรข้างหน้ามี ${pt.name}`);
-          }
-        } else if (dist > 250 && alertedPoints.has(pt.id)) {
-          alertedPoints.delete(pt.id);
-          speakText(`พ้นระยะ ${pt.name} แล้ว ขับขี่ปลอดภัยครับ`);
-        }
-      });
-
-      const banner = document.getElementById('alert-banner');
-      if (activeAlert) {
-        banner.innerText = `🚨 ${activeAlert.pt.name} (อีก ${Math.round(activeAlert.dist)} ม.)`;
-        banner.style.display = 'block';
-      } else {
-        banner.style.display = 'none';
-      }
-    }
-
-    // 5. GPS Handling
+    // GPS Position Tracking Handler
     function handlePosition(position) {
-      const { latitude, longitude, speed, accuracy, altitude, timestamp } = position.coords;
-      currentLat = latitude; currentLng = longitude;
+      const { latitude, longitude, speed, heading, accuracy, altitude } = position.coords;
       
-      document.getElementById('gps-status').innerText = 'GPS: LOCKED';
-      document.getElementById('gps-status').classList.add('active');
+      currentLat = latitude; currentLng = longitude;
+      if (heading !== null && !isNaN(heading)) currentHeading = heading;
 
-      const speedKmh = speed ? (speed * 3.6) : 0;
-      if (speedKmh > maxSpeed) maxSpeed = speedKmh;
+      // Speed Conversions
+      let rawSpeedKmh = speed ? (speed * 3.6) : 0;
+      if (selectedMode === 'boat') currentSpeed = rawSpeedKmh * 0.539957; // Knots
+      else currentSpeed = rawSpeedKmh;
 
-      document.getElementById('speed').innerText = speedKmh.toFixed(1);
+      if (currentSpeed > maxSpeed) maxSpeed = currentSpeed;
+
+      document.getElementById('speed').innerText = currentSpeed.toFixed(1);
       document.getElementById('max-speed').innerText = maxSpeed.toFixed(1);
       document.getElementById('accuracy').innerText = accuracy ? Math.round(accuracy) : '--';
       document.getElementById('altitude').innerText = altitude ? Math.round(altitude) : '--';
 
-      const currentLatLng = [latitude, longitude];
-      checkSpeedCameraAlerts(latitude, longitude);
+      // Move & Rotate Marker
+      const newPos = [latitude, longitude];
+      vehicleMarker.setLatLng(newPos);
+      vehicleMarker.setIcon(createVehicleMarker(vehicleIcons[selectedMode], currentHeading));
+      map.panTo(newPos);
 
-      if (pathCoordinates.length > 0) {
-        const lastPt = pathCoordinates[pathCoordinates.length - 1];
-        const dist = calculateDistance(lastPt.lat, lastPt.lng, latitude, longitude);
-        if (dist > 3) {
-          totalDistance += dist;
-          pathCoordinates.push({ lat: latitude, lng: longitude, ele: altitude || 0, time: new Date(timestamp || Date.now()).toISOString(), speed: speedKmh });
-          pathLine.addLatLng(currentLatLng);
-        }
-      } else {
-        pathCoordinates.push({ lat: latitude, lng: longitude, ele: altitude || 0, time: new Date(timestamp || Date.now()).toISOString(), speed: speedKmh });
+      // Update Navigation Distance
+      if (routingControl) {
+        updateNavigationGuidance();
       }
-
-      document.getElementById('distance').innerText = (totalDistance / 1000).toFixed(2);
-      marker.setLatLng(currentLatLng);
-      map.panTo(currentLatLng);
     }
 
     function toggleTracking() {
       const btn = document.getElementById('toggle-btn');
       if (!isTracking) {
         if ("geolocation" in navigator) {
-          speakText("เริ่มเปิดระบบจับความเร็วและแจ้งเตือนกล้อง");
-          watchId = navigator.geolocation.watchPosition(handlePosition, () => {}, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+          requestWakeLock();
+          speakText(`เริ่มเปิดระบบติดตามพิกัด โหมด${selectedMode}`);
+          watchId = navigator.geolocation.watchPosition(handlePosition, null, { enableHighAccuracy: true, maximumAge: 0 });
           isTracking = true;
           btn.innerText = "STOP TRACKING";
           btn.classList.add("stop");
@@ -359,85 +460,33 @@
         btn.innerText = "START TRACKING";
         btn.classList.remove("stop");
         btn.classList.add("primary");
-        document.getElementById('gps-status').innerText = 'GPS: PAUSED';
-        document.getElementById('gps-status').classList.remove('active');
       }
     }
 
-    // 6. Camera & Video Recording
+    // Camera & Helpers
+    let cameraStream = null;
     async function toggleCamera() {
       const videoEl = document.getElementById('camera-preview');
       const btnCam = document.getElementById('btn-camera');
-      const btnRec = document.getElementById('btn-rec');
-
       if (!cameraStream) {
-        try {
-          cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: "environment" } }, audio: false });
-        } catch (err) {
-          cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        }
-        videoEl.srcObject = cameraStream;
-        videoEl.style.display = 'block';
-        btnCam.classList.add('active');
-        btnRec.disabled = false;
+        try { cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); }
+        catch(e) { cameraStream = await navigator.mediaDevices.getUserMedia({ video: true }); }
+        videoEl.srcObject = cameraStream; videoEl.style.display = 'block'; btnCam.classList.add('active');
       } else {
-        cameraStream.getTracks().forEach(track => track.stop());
-        cameraStream = null;
-        videoEl.style.display = 'none';
-        btnCam.classList.remove('active');
-        btnRec.disabled = true;
+        cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; videoEl.style.display = 'none'; btnCam.classList.remove('active');
       }
     }
 
-    function toggleRecord() {
-      const btnRec = document.getElementById('btn-rec');
-      if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.stop();
-        btnRec.innerText = "🔴 บันทึกวิดีโอ";
-        btnRec.classList.remove('active');
-      } else {
-        recordedChunks = [];
-        mediaRecorder = new MediaRecorder(cameraStream);
-        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(recordedChunks, { type: "video/mp4" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url; a.download = `Dashcam_${Date.now()}.mp4`; a.click();
-        };
-        mediaRecorder.start();
-        btnRec.innerText = "⏹️ กำลังบันทึก...";
-        btnRec.classList.add('active');
-      }
-    }
-
-    // 7. Extra Utility Functions
     function toggleDayNight() {
-      isNightMode = !isNightMode;
-      document.body.classList.toggle('light-mode', !isNightMode);
-      document.getElementById('btn-mode').innerText = isNightMode ? "🌙 โหมดกลางคืน" : "☀️ โหมดกลางวัน";
+      document.body.classList.toggle('light-mode');
     }
 
     function speakCurrentLocation() {
-      speakText(`ตำแหน่งปัจจุบัน ละติจูด ${currentLat.toFixed(4)} ลองจิจูด ${currentLng.toFixed(4)} ความเร็ว ${document.getElementById('speed').innerText} กิโลเมตรต่อชั่วโมง`);
+      speakText(`พิกัดปัจจุบัน ละติจูด ${currentLat.toFixed(4)} ลองจิจูด ${currentLng.toFixed(4)} ความเร็ว ${currentSpeed.toFixed(1)}`);
     }
 
-    function toggleMiniUI() {
-      isMiniUI = !isMiniUI;
-      document.getElementById('dashboard').style.display = isMiniUI ? 'none' : 'grid';
-    }
-
-    function exportGPX() {
-      if (pathCoordinates.length === 0) { alert("ยังไม่มีข้อมูลเส้นทางครับ"); return; }
-      let trkpts = pathCoordinates.map(pt => `      <trkpt lat="${pt.lat}" lon="${pt.lng}"><ele>${pt.ele}</ele><time>${pt.time}</time></trkpt>`).join('\n');
-      let gpx = `<?xml version="1.0"?><gpx version="1.1" creator="GPS Dashcam App"><trk><trkseg>\n${trkpts}\n</trkseg></trk></gpx>`;
-      const blob = new Blob([gpx], { type: 'application/gpx+xml' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Track_${Date.now()}.gpx`; a.click();
-    }
-
-    // Service Worker Registration
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js'); });
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
     }
   </script>
 </body>
