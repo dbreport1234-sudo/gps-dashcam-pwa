@@ -44,6 +44,18 @@
       z-index: 2000;
     }
 
+    .ai-banner {
+      background: #1e1b4b;
+      color: #a7f3d0;
+      padding: 6px 12px;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #312e81;
+      z-index: 1600;
+    }
+
     .nav-banner {
       display: none;
       background: #15803d;
@@ -93,7 +105,7 @@
       left: 0;
       right: 0;
       background: var(--card-bg);
-      max-height: 200px;
+      max-height: 220px;
       overflow-y: auto;
       border: 1px solid var(--border-color);
       box-shadow: 0 8px 16px rgba(0,0,0,0.5);
@@ -104,18 +116,6 @@
       border-bottom: 1px solid var(--border-color);
       font-size: 12px;
       cursor: pointer;
-    }
-
-    /* AI Status Banner */
-    .ai-banner {
-      background: #1e1b4b;
-      color: #a7f3d0;
-      padding: 6px 12px;
-      font-size: 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid #312e81;
     }
 
     .dashboard {
@@ -165,12 +165,13 @@
     }
     .btn.primary { background: #22c55e; }
     .btn.stop { background: #ef4444; }
-    .btn.ai-active { background: #8b5cf6; animation: pulse 1.5s infinite; }
+    .btn.ai-active { background: #8b5cf6; }
+    .btn.ai-listening { background: #ec4899; animation: pulse 1s infinite; }
 
     @keyframes pulse {
-      0% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.7); }
-      70% { box-shadow: 0 0 0 8px rgba(139, 92, 246, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
     }
 
     .viewport { flex: 1; position: relative; width: 100%; height: 100%; }
@@ -209,7 +210,7 @@
 
   <!-- AI Companion Bar -->
   <div class="ai-banner">
-    <span>🤖 AI เพื่อนเดินทาง: <strong id="ai-status-text">ปิดอยู่</strong></span>
+    <span>🤖 AI: <strong id="ai-status-text">ปิดอยู่</strong></span>
     <button class="btn ai-active" id="btn-ai-toggle" onclick="toggleAIAssistant()">🎙️ เปิดโหมดฟังค้าง</button>
   </div>
 
@@ -231,7 +232,7 @@
         <option value="bicycle">🚲 จักรยาน</option>
         <option value="walk">🚶 เดิน</option>
       </select>
-      <input type="text" id="dest-input" placeholder="พิมพ์หรือสั่งด้วยเสียง 'นำทางไป...'" onkeypress="if(event.key==='Enter') searchDestination()">
+      <input type="text" id="dest-input" placeholder="พิมพ์ชื่อสถานที่ หรือพูดสั่งนำทาง..." onkeypress="if(event.key==='Enter') searchDestination()">
       <button class="btn primary" onclick="searchDestination()">🔍 ค้นหา</button>
       <button class="btn stop" onclick="cancelNavigation()">ยกเลิก</button>
     </div>
@@ -263,8 +264,9 @@
   <div class="controls">
     <button class="btn primary" id="toggle-btn" onclick="toggleTracking()">START TRACKING</button>
     <button class="btn" id="btn-camera" onclick="toggleCamera()">📷 กล้องหน้ารถ</button>
-    <button class="btn" onclick="toggleDayNight()">🌙 โหมดกลางคืน</button>
+    <button class="btn" onclick="toggleDayNight()">🌙 กลางคืน</button>
     <button class="btn" onclick="speakCurrentLocation()">🗣️ บอกตำแหน่ง</button>
+    <button class="btn" style="background:#64748b;" onclick="location.reload()">🔄 รีเซ็ตแอป</button>
   </div>
 
   <!-- Map -->
@@ -284,10 +286,9 @@
     let selectedMode = 'car';
     let routingControl = null;
     let currentInstructions = [];
-    let isAIListening = false;
+    let isAIActive = false;
     let recognition = null;
-    let startTime = null;
-    let speedWarningCooldown = false;
+    let isProcessingCommand = false;
 
     const vehicleIcons = { car: '🚗', motorcycle: '🛵', bicycle: '🚲', walk: '🚶' };
 
@@ -306,123 +307,163 @@
       icon: createVehicleMarker(vehicleIcons[selectedMode], currentHeading)
     }).addTo(map);
 
-    function aiSpeak(text) {
+    function aiSpeak(text, callback) {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'th-TH';
         u.rate = 1.0;
-        u.pitch = 1.0;
+        u.onend = () => { if (callback) callback(); };
+        u.onerror = () => { if (callback) callback(); };
         window.speechSynthesis.speak(u);
+      } else {
+        if (callback) callback();
       }
     }
 
-    // 🤖 ระบบฟังค้างโต้ตอบ (Continuous Voice Recognition)
-    function initSpeechRecognition() {
+    // 🤖 ระบบ Speech Recognition อัลกอริทึมใหม่ (Auto-Restart Robust Loop)
+    function initSpeechEngine() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        alert("เบราว์เซอร์นี้ไม่รองรับการฟังเสียงอัตโนมัติ กรุณาใช้ Chrome หรือ Edge บน Android");
+        alert("เบราว์เซอร์นี้ไม่รองรับการฟังเสียงอัตโนมัติ กรุณาใช้ Google Chrome บน Android");
         return;
       }
 
       recognition = new SpeechRecognition();
       recognition.lang = 'th-TH';
-      recognition.continuous = true;
+      recognition.continuous = false; // ปรับเป็น false เพื่อเสถียรภาพบนมือถือ
       recognition.interimResults = false;
 
       recognition.onstart = () => {
-        isAIListening = true;
         document.getElementById('ai-status-text').innerText = "กำลังฟัง...";
-        document.getElementById('btn-ai-toggle').innerText = "🎙️ ปิดโหมดฟังค้าง";
+        const btn = document.getElementById('btn-ai-toggle');
+        btn.classList.add('ai-listening');
+        btn.innerText = "🔴 AI กำลังฟังอยู่ (กดปิด)";
       };
 
       recognition.onresult = (event) => {
-        const lastIndex = event.results.length - 1;
-        const text = event.results[lastIndex][0].transcript.trim().toLowerCase();
+        const text = event.results[0][0].transcript.trim();
+        document.getElementById('ai-status-text').innerText = `ได้ยิน: "${text}"`;
         processVoiceCommand(text);
       };
 
-      recognition.onerror = () => {};
+      recognition.onerror = (err) => {
+        console.log("Speech error:", err.error);
+      };
 
       recognition.onend = () => {
-        // หากเปิดโหมดฟังค้างไว้ ให้เริ่มฟังใหม่ทันทีเมื่อระบบหลุด
-        if (isAIListening) {
-          try { recognition.start(); } catch(e) {}
-        } else {
+        const btn = document.getElementById('btn-ai-toggle');
+        btn.classList.remove('ai-listening');
+
+        // หากเปิดโหมด AI ไว้ ให้เริ่มฟังใหม่แบบวนลูป
+        if (isAIActive && !isProcessingCommand) {
+          setTimeout(() => {
+            try { recognition.start(); } catch(e) {}
+          }, 300);
+        } else if (!isAIActive) {
           document.getElementById('ai-status-text').innerText = "ปิดอยู่";
-          document.getElementById('btn-ai-toggle').innerText = "🎙️ เปิดโหมดฟังค้าง";
+          btn.innerText = "🎙️ เปิดโหมดฟังค้าง";
         }
       };
     }
 
     function toggleAIAssistant() {
-      if (!recognition) initSpeechRecognition();
-      
-      if (!isAIListening) {
-        isAIListening = true;
-        try { recognition.start(); } catch(e) {}
-        aiSpeak("เปิดโหมดเพื่อนเดินทางเรียบร้อยแล้ว มีอะไรให้ช่วยบอกได้เลยครับ");
+      if (!recognition) initSpeechEngine();
+
+      if (!isAIActive) {
+        isAIActive = true;
+        aiSpeak("เปิดโหมด AI เพื่อนเดินทางแล้ว พูดสั่งนำทางได้เลยครับ", () => {
+          try { recognition.start(); } catch(e) {}
+        });
       } else {
-        isAIListening = false;
+        isAIActive = false;
         try { recognition.stop(); } catch(e) {}
-        aiSpeak("ปิดโหมดฟังค้างเรียบร้อยแล้ว เดินทางปลอดภัยครับ");
+        aiSpeak("ปิดระบบฟังเสียงเรียบร้อยครับ");
       }
     }
 
-    // 🧠 สมอง AI วิเคราะห์คำสั่งเสียง
+    // 🧠 วิเคราะห์คำสั่งเสียง
     function processVoiceCommand(text) {
-      console.log("ได้ยินคำสั่ง:", text);
+      isProcessingCommand = true;
+      const lowerText = text.toLowerCase();
 
-      if (text.includes("นำทางไป") || text.includes("ไปที่")) {
-        let dest = text.replace("นำทางไป", "").replace("ไปที่", "").trim();
-        document.getElementById('dest-input').value = dest;
-        aiSpeak(`กำลังค้นหาเส้นทางไป ${dest}`);
-        searchDestination();
-      } else if (text.includes("อยู่ที่ไหน") || text.includes("ตำแหน่ง")) {
-        speakCurrentLocation();
-      } else if (text.includes("กี่กิโล") || text.includes("อีกนานไหม") || text.includes("กี่นาที")) {
-        if (currentInstructions.length > 0) {
-          aiSpeak(`กำลังนำทางครับ ดูระยะทางย่อยล่าสุดบนหน้าจอได้เลย`);
+      if (lowerText.includes("นำทางไป") || lowerText.includes("ไปที่") || lowerText.includes("ไป")) {
+        let dest = text.replace(/นำทางไป|ไปที่|ไป/g, "").trim();
+        if (dest.length > 0) {
+          document.getElementById('dest-input').value = dest;
+          aiSpeak(`กำลังค้นหาเส้นทางไป ${dest}`, () => {
+            searchDestinationDirect(dest);
+          });
         } else {
-          aiSpeak("ตอนนี้ยังไม่ได้ตั้งค่าจุดหมายนำทางครับ สั่งให้ผมนำทางได้นะ");
+          resumeListening();
         }
-      } else if (text.includes("ยกเลิก") || text.includes("หยุดนำทาง")) {
+      } else if (lowerText.includes("อยู่ที่ไหน") || lowerText.includes("ตำแหน่ง")) {
+        speakCurrentLocation(() => resumeListening());
+      } else if (lowerText.includes("ยกเลิก") || lowerText.includes("หยุดนำทาง")) {
         cancelNavigation();
-      } else if (text.includes("เหงา") || text.includes("ชวนคุย") || text.includes("ง่วง")) {
-        aiSpeak("ขับรถไกลๆ ถ้าง่วงอย่าฝืนนะครับ มองหาปั๊มข้างหน้าแวะพักจิบกาแฟสักแก้วดีกว่าครับ");
+        aiSpeak("ยกเลิกการนำทางแล้วครับ", () => resumeListening());
+      } else if (lowerText.includes("เหงา") || lowerText.includes("ชวนคุย") || lowerText.includes("ง่วง")) {
+        aiSpeak("ขับรถถ้าง่วง หาที่จอดพักจิบกาแฟสักนิดนะครับ ปลอดภัยไว้ก่อนครับ", () => resumeListening());
+      } else {
+        // หากพูดอย่างอื่นที่ไม่ใช่คำสั่ง ให้วนกลับไปฟังใหม่
+        setTimeout(() => resumeListening(), 1000);
       }
     }
 
-    // 🔍 ค้นหา + รายการตัวเลือกสถานที่
+    function resumeListening() {
+      isProcessingCommand = false;
+      if (isAIActive) {
+        try { recognition.start(); } catch(e) {}
+      }
+    }
+
+    // 🔍 ระบบค้นหาแบบกดปุ่ม/พิมพ์
     async function searchDestination() {
       const query = document.getElementById('dest-input').value;
-      const suggestionsBox = document.getElementById('suggestions');
       if (!query.trim()) return;
+      searchDestinationDirect(query);
+    }
 
+    // 🔍 ระบบค้นหาทำงานตรง (ไม่ค้าง)
+    async function searchDestinationDirect(query) {
+      const suggestionsBox = document.getElementById('suggestions');
       suggestionsBox.innerHTML = '<div class="suggestion-item">🔍 กำลังค้นหา...</div>';
       suggestionsBox.style.display = 'block';
 
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=th&limit=5&q=${encodeURIComponent(query)}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // กันค้าง 8 วินาที
+
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=th&limit=5&q=${encodeURIComponent(query)}`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
         const data = await res.json();
         suggestionsBox.innerHTML = '';
 
-        if (data.length === 0) {
+        if (!data || data.length === 0) {
           suggestionsBox.innerHTML = '<div class="suggestion-item">❌ ไม่พบสถานที่</div>';
-          aiSpeak("ขออภัยครับ ไม่พบสถานที่ที่คุณค้นหา");
+          aiSpeak("ไม่พบสถานที่ที่ต้องการครับ ลองเปลี่ยนคำค้นหาดูนะครับ", () => resumeListening());
           return;
         }
 
-        data.forEach(item => {
-          const div = document.createElement('div');
-          div.className = 'suggestion-item';
-          div.innerHTML = `📍 <strong>${item.display_name.split(',')[0]}</strong><br><small style="opacity:0.7">${item.display_name}</small>`;
-          div.onclick = () => selectDestination(parseFloat(item.lat), parseFloat(item.lon), item.display_name);
-          suggestionsBox.appendChild(div);
-        });
+        // หากเป็นการสั่งด้วยเสียง เลือกอันแรกให้อัตโนมัติทันที
+        if (isProcessingCommand) {
+          const topMatch = data[0];
+          selectDestination(parseFloat(topMatch.lat), parseFloat(topMatch.lon), topMatch.display_name);
+        } else {
+          // หากพิมพ์ค้นหา ให้ขึ้นรายการตัวเลือกให้จิ้ม
+          data.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'suggestion-item';
+            div.innerHTML = `📍 <strong>${item.display_name.split(',')[0]}</strong><br><small style="opacity:0.7">${item.display_name}</small>`;
+            div.onclick = () => selectDestination(parseFloat(item.lat), parseFloat(item.lon), item.display_name);
+            suggestionsBox.appendChild(div);
+          });
+        }
 
       } catch (e) {
-        suggestionsBox.innerHTML = '<div class="suggestion-item">เกิดข้อผิดพลาด</div>';
+        suggestionsBox.innerHTML = '<div class="suggestion-item">⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ</div>';
+        aiSpeak("การค้นหาขัดข้อง กรุณาลองใหม่อีกครั้งครับ", () => resumeListening());
       }
     }
 
@@ -434,6 +475,7 @@
 
     function startRouting(destLat, destLng) {
       if (routingControl) map.removeControl(routingControl);
+      
       routingControl = L.Routing.control({
         waypoints: [L.latLng(currentLat, currentLng), L.latLng(destLat, destLng)],
         router: L.Routing.osrmv1({ serviceUrl: `https://router.project-osrm.org/route/v1`, profile: selectedMode === 'walk' ? 'foot' : 'car' }),
@@ -444,14 +486,18 @@
       routingControl.on('routesfound', (e) => {
         currentInstructions = e.routes[0].instructions;
         document.getElementById('nav-banner').style.display = 'flex';
-        aiSpeak("วางเส้นทางเรียบร้อยครับ เริ่มออกเดินทางได้เลย");
+        aiSpeak("พบเส้นทางแล้ว เริ่มนำทางได้เลยครับ", () => resumeListening());
+      });
+
+      routingControl.on('routingerror', () => {
+        aiSpeak("ไม่สามารถวางเส้นทางไปยังจุดหมายนี้ได้ครับ", () => resumeListening());
       });
     }
 
     function cancelNavigation() {
       if (routingControl) map.removeControl(routingControl);
+      document.getElementById('suggestions').style.display = 'none';
       document.getElementById('nav-banner').style.display = 'none';
-      aiSpeak("ยกเลิกการนำทางแล้วครับ");
     }
 
     function handlePosition(pos) {
@@ -469,23 +515,15 @@
       vehicleMarker.setLatLng([latitude, longitude]);
       vehicleMarker.setIcon(createVehicleMarker(vehicleIcons[selectedMode], currentHeading));
       map.panTo([latitude, longitude]);
-
-      // ⚠️ AI แจ้งเตือนความเร็วเกินแบบอัตโนมัติ
-      if (currentSpeed > 100 && !speedWarningCooldown) {
-        aiSpeak("ความเร็วเกิน 100 กิโลเมตรต่อชั่วโมงแล้วนะครับ ระวังความปลอดภัยด้วยครับ");
-        speedWarningCooldown = true;
-        setTimeout(() => { speedWarningCooldown = false; }, 60000); // เตือนซ้ำได้ทุก 1 นาที
-      }
     }
 
     function toggleTracking() {
       const btn = document.getElementById('toggle-btn');
       if (!isTracking) {
-        startTime = new Date();
         watchId = navigator.geolocation.watchPosition(handlePosition, null, { enableHighAccuracy: true });
         isTracking = true;
         btn.innerText = "STOP TRACKING"; btn.classList.add("stop");
-        aiSpeak("เริ่มเปิดระบบติดตามตำแหน่งเดินทาง");
+        aiSpeak("เริ่มเปิดระบบระบุตำแหน่ง GPS");
       } else {
         navigator.geolocation.clearWatch(watchId);
         isTracking = false;
@@ -497,14 +535,18 @@
     async function toggleCamera() {
       const v = document.getElementById('camera-preview');
       if (!cameraStream) {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        v.srcObject = cameraStream; v.style.display = 'block';
+        try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+          v.srcObject = cameraStream; v.style.display = 'block';
+        } catch(e) { alert("ไม่สามารถเปิดกล้องได้"); }
       } else {
         cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; v.style.display = 'none';
       }
     }
 
-    function speakCurrentLocation() { aiSpeak(`ขณะนี้ท่านอยู่ที่ พิกัด ${currentLat.toFixed(4)}, ${currentLng.toFixed(4)} ความเร็วปัจจุบัน ${currentSpeed.toFixed(1)} กิโลเมตรต่อชั่วโมง`); }
+    function speakCurrentLocation(cb) { 
+      aiSpeak(`ขณะนี้คุณอยู่ที่ ละติจูด ${currentLat.toFixed(3)} ลองจิจูด ${currentLng.toFixed(3)} ความเร็ว ${currentSpeed.toFixed(1)} กิโลเมตรต่อชั่วโมง`, cb); 
+    }
     function toggleDayNight() { document.body.classList.toggle('light-mode'); }
     function changeTransportMode() { selectedMode = document.getElementById('transport-mode').value; }
 
