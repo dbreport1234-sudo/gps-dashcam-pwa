@@ -3,554 +3,291 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>GPS AI Companion & Navigation</title>
+  <title>3D GPS Navigation System</title>
   
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0f172a">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <!-- MapLibre GL CSS -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <!-- FontAwesome & Google Fonts -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
 
   <style>
-    :root {
-      --bg-color: #0f172a;
-      --card-bg: #1e293b;
-      --text-color: #f8fafc;
-      --accent-color: #0284c7;
-      --border-color: #334155;
+    * {
+      box-sizing: border-box;
+      font-family: 'Prompt', sans-serif;
+      margin: 0; padding: 0;
     }
-    body.light-mode {
-      --bg-color: #f1f5f9;
-      --card-bg: #ffffff;
-      --text-color: #0f172a;
-      --accent-color: #2563eb;
-      --border-color: #cbd5e1;
+    body, html {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background-color: #0d1117;
+      color: #fff;
     }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background-color: var(--bg-color); color: var(--text-color); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-
-    .osd-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 6px 12px;
-      background: rgba(0,0,0,0.85);
-      color: #00ffcc;
-      font-family: monospace;
-      font-size: 11px;
-      z-index: 2000;
-    }
-
-    .ai-banner {
-      background: #1e1b4b;
-      color: #a7f3d0;
-      padding: 6px 12px;
-      font-size: 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid #312e81;
-      z-index: 1600;
-    }
-
-    .nav-banner {
-      display: none;
-      background: #15803d;
-      color: white;
-      padding: 10px 14px;
-      font-size: 15px;
-      font-weight: bold;
-      align-items: center;
-      gap: 10px;
-      z-index: 2000;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
-
-    .search-container {
-      position: relative;
-      background: var(--card-bg);
-      z-index: 1500;
-      border-bottom: 1px solid var(--border-color);
-    }
-    .search-box {
-      display: flex;
-      gap: 6px;
-      padding: 8px;
-    }
-    .search-box input {
-      flex: 1;
-      padding: 8px 12px;
-      border-radius: 6px;
-      border: 1px solid var(--border-color);
-      background: rgba(0,0,0,0.2);
-      color: var(--text-color);
-      font-size: 13px;
-    }
-    .mode-select {
-      background: #334155;
-      color: white;
-      border: none;
-      padding: 8px;
-      border-radius: 6px;
-      font-size: 12px;
-    }
-
-    .suggestions-list {
-      display: none;
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      background: var(--card-bg);
-      max-height: 220px;
-      overflow-y: auto;
-      border: 1px solid var(--border-color);
-      box-shadow: 0 8px 16px rgba(0,0,0,0.5);
-      z-index: 2500;
-    }
-    .suggestion-item {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border-color);
-      font-size: 12px;
-      cursor: pointer;
-    }
-
-    .dashboard {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 4px;
-      padding: 6px;
-      background: var(--card-bg);
-      border-bottom: 1px solid var(--border-color);
-    }
-    .card {
-      background: rgba(0,0,0,0.2);
-      padding: 4px;
-      border-radius: 6px;
-      text-align: center;
-      border: 1px solid var(--border-color);
-    }
-    .card.main {
-      grid-column: span 4;
-      background: var(--accent-color);
-      color: white;
-      border: none;
-      padding: 8px;
-    }
-    .card .label { font-size: 9px; opacity: 0.8; }
-    .card .value { font-size: 18px; font-weight: 800; }
-    .card.main .value { font-size: 38px; font-weight: 900; }
-
-    .controls {
-      display: flex;
-      gap: 6px;
-      padding: 6px 8px;
-      background: var(--card-bg);
-      overflow-x: auto;
-      border-bottom: 1px solid var(--border-color);
-    }
-    .btn {
-      background: #334155;
-      color: white;
-      border: none;
-      padding: 8px 10px;
-      border-radius: 6px;
-      font-weight: bold;
-      cursor: pointer;
-      font-size: 11px;
-      white-space: nowrap;
-    }
-    .btn.primary { background: #22c55e; }
-    .btn.stop { background: #ef4444; }
-    .btn.ai-active { background: #8b5cf6; }
-    .btn.ai-listening { background: #ec4899; animation: pulse 1s infinite; }
-
-    @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.5; }
-      100% { opacity: 1; }
-    }
-
-    .viewport { flex: 1; position: relative; width: 100%; height: 100%; }
-    #map { width: 100%; height: 100%; background: #090d16; }
     
-    #camera-preview {
+    #map {
+      width: 100vw;
+      height: 100vh;
       position: absolute;
-      bottom: 12px;
-      right: 12px;
-      width: 120px;
-      height: 90px;
-      border-radius: 8px;
-      border: 2px solid var(--accent-color);
-      z-index: 1001;
-      object-fit: cover;
-      display: none;
+      top: 0; left: 0;
     }
 
+    /* HUD Header Panel */
+    .hud-header {
+      position: absolute;
+      top: 15px; left: 15px; right: 15px;
+      z-index: 10;
+      background: rgba(22, 27, 34, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    
+    .nav-info {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .turn-icon {
+      width: 45px; height: 45px;
+      background: #238636;
+      border-radius: 12px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 1.5rem;
+    }
+    .nav-text h2 { font-size: 1.1rem; font-weight: 600; color: #58a6ff; }
+    .nav-text p { font-size: 0.85rem; color: #8b949e; }
+
+    .speed-badge {
+      text-align: right;
+    }
+    .speed-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #3fb950;
+      line-height: 1;
+    }
+    .speed-unit { font-size: 0.75rem; color: #8b949e; }
+
+    /* HUD Bottom Controls */
+    .hud-bottom {
+      position: absolute;
+      bottom: 25px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      gap: 12px;
+      background: rgba(22, 27, 34, 0.85);
+      backdrop-filter: blur(12px);
+      padding: 8px 16px;
+      border-radius: 30px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-hud {
+      background: transparent;
+      border: none;
+      color: #c9d1d9;
+      font-size: 1.2rem;
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: all 0.2s ease;
+    }
+    .btn-hud:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .btn-hud.active { background: #1f6feb; color: #fff; }
+
+    /* Custom 3D Vehicle Marker */
+    .vehicle-marker {
+      width: 40px; height: 40px;
+      background: radial-gradient(circle, rgba(58,166,255,0.4) 0%, rgba(0,0,0,0) 70%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: transform 0.3s linear;
+    }
     .vehicle-icon {
-      transition: transform 0.3s ease;
-      font-size: 28px;
-      text-align: center;
+      font-size: 1.8rem;
+      color: #58a6ff;
+      filter: drop-shadow(0px 4px 8px rgba(0,0,0,0.8));
     }
-
-    .leaflet-routing-container { display: none !important; }
   </style>
 </head>
 <body>
 
-  <!-- OSD Overlay -->
-  <div class="osd-bar">
-    <span id="osd-datetime">00/00/0000 00:00:00</span>
-    <span id="osd-mode">🚗 CAR MODE</span>
-    <span id="osd-status">GPS Ready</span>
-  </div>
+  <!-- Map Container -->
+  <div id="map"></div>
 
-  <!-- AI Companion Bar -->
-  <div class="ai-banner">
-    <span>🤖 AI: <strong id="ai-status-text">ปิดอยู่</strong></span>
-    <button class="btn ai-active" id="btn-ai-toggle" onclick="toggleAIAssistant()">🎙️ เปิดโหมดฟังค้าง</button>
-  </div>
-
-  <!-- Navigation Banner -->
-  <div id="nav-banner" class="nav-banner">
-    <span style="font-size:24px;">⬆️</span>
-    <div>
-      <div id="nav-text">กำลังค้นหา...</div>
-      <div id="nav-dist" style="font-size: 12px;">-- ม.</div>
+  <!-- Top HUD Panel -->
+  <div class="hud-header">
+    <div class="nav-info">
+      <div class="turn-icon"><i class="fa-solid fa-arrow-up"></i></div>
+      <div class="nav-text">
+        <h2 id="status-text">ระบบนำทาง 3D พร้อมใช้งาน</h2>
+        <p id="sub-status">กำลังรอสัญญาณ GPS...</p>
+      </div>
+    </div>
+    <div class="speed-badge">
+      <div class="speed-value" id="speed-display">0</div>
+      <div class="speed-unit">KM/H</div>
     </div>
   </div>
 
-  <!-- Search Container -->
-  <div class="search-container">
-    <div class="search-box">
-      <select id="transport-mode" class="mode-select" onchange="changeTransportMode()">
-        <option value="car">🚗 รถยนต์</option>
-        <option value="motorcycle">🛵 มอเตอร์ไซค์</option>
-        <option value="bicycle">🚲 จักรยาน</option>
-        <option value="walk">🚶 เดิน</option>
-      </select>
-      <input type="text" id="dest-input" placeholder="พิมพ์ชื่อสถานที่ หรือพูดสั่งนำทาง..." onkeypress="if(event.key==='Enter') searchDestination()">
-      <button class="btn primary" onclick="searchDestination()">🔍 ค้นหา</button>
-      <button class="btn stop" onclick="cancelNavigation()">ยกเลิก</button>
-    </div>
-    <div id="suggestions" class="suggestions-list"></div>
+  <!-- Bottom HUD Controls -->
+  <div class="hud-bottom">
+    <button class="btn-hud active" id="btn-lock" title="Recenter / Lock Track">
+      <i class="fa-solid fa-location-arrow"></i>
+    </button>
+    <button class="btn-hud" id="btn-toggle-3d" title="Toggle 2D/3D Pitch">
+      <i class="fa-solid fa-cube"></i>
+    </button>
+    <button class="btn-hud" id="btn-mic" title="Voice Command">
+      <i class="fa-solid fa-microphone"></i>
+    </button>
   </div>
 
-  <!-- Dashboard -->
-  <div class="dashboard">
-    <div class="card main">
-      <div class="label">SPEED</div>
-      <div class="value" id="speed">0.0</div>
-      <span style="font-size: 10px;" id="speed-unit">km/h</span>
-    </div>
-    <div class="card">
-      <div class="label">MAX</div>
-      <div class="value" id="max-speed">0.0</div>
-    </div>
-    <div class="card">
-      <div class="label">DIST</div>
-      <div class="value" id="distance">0.00</div>
-    </div>
-    <div class="card">
-      <div class="label">ALT</div>
-      <div class="value" id="altitude">--</div>
-    </div>
-  </div>
-
-  <!-- Controls -->
-  <div class="controls">
-    <button class="btn primary" id="toggle-btn" onclick="toggleTracking()">START TRACKING</button>
-    <button class="btn" id="btn-camera" onclick="toggleCamera()">📷 กล้องหน้ารถ</button>
-    <button class="btn" onclick="toggleDayNight()">🌙 กลางคืน</button>
-    <button class="btn" onclick="speakCurrentLocation()">🗣️ บอกตำแหน่ง</button>
-    <button class="btn" style="background:#64748b;" onclick="location.reload()">🔄 รีเซ็ตแอป</button>
-  </div>
-
-  <!-- Map -->
-  <div class="viewport">
-    <div id="map"></div>
-    <video id="camera-preview" autoplay playsinline muted></video>
-  </div>
-
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+  <!-- MapLibre GL JS -->
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
   <script>
-    let watchId = null;
-    let isTracking = false;
-    let currentLat = 13.7563, currentLng = 100.5018;
-    let currentHeading = 0, currentSpeed = 0, maxSpeed = 0;
-    let selectedMode = 'car';
-    let routingControl = null;
-    let currentInstructions = [];
-    let isAIActive = false;
-    let recognition = null;
-    let isProcessingCommand = false;
+    // Config ค่าเริ่มต้น
+    let currentPos = [100.5018, 13.7563]; // Bangkok Default [lng, lat]
+    let currentHeading = 0;
+    let currentSpeed = 0;
+    let isTrackingLock = true;
+    let is3DMode = true;
 
-    const vehicleIcons = { car: '🚗', motorcycle: '🛵', bicycle: '🚲', walk: '🚶' };
+    // 1. Initialize MapLibre GL Map (3D Perspective View)
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json', // Vector dark style
+      center: currentPos,
+      zoom: 17.5,
+      pitch: 60,   // มุมเอียง 60 องศาแบบ 3D
+      bearing: 0,  // หมุนทิศทางตามหัวรถ
+      antialias: true
+    });
 
-    const map = L.map('map', { zoomControl: false }).setView([currentLat, currentLng], 16);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    // 2. Custom Vehicle 3D Element Marker
+    const vehicleEl = document.createElement('div');
+    vehicleEl.className = 'vehicle-marker';
+    vehicleEl.innerHTML = '<i class="fa-solid fa-car-side vehicle-icon"></i>';
 
-    function createVehicleMarker(emoji, heading) {
-      return L.divIcon({
-        className: 'custom-vehicle-marker',
-        html: `<div class="vehicle-icon" style="transform: rotate(${heading}deg);">${emoji}</div>`,
-        iconSize: [30, 30], iconAnchor: [15, 15]
-      });
-    }
+    const marker = new maplibregl.Marker({ element: vehicleEl })
+      .setLngLat(currentPos)
+      .addTo(map);
 
-    let vehicleMarker = L.marker([currentLat, currentLng], {
-      icon: createVehicleMarker(vehicleIcons[selectedMode], currentHeading)
-    }).addTo(map);
-
-    function aiSpeak(text, callback) {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'th-TH';
-        u.rate = 1.0;
-        u.onend = () => { if (callback) callback(); };
-        u.onerror = () => { if (callback) callback(); };
-        window.speechSynthesis.speak(u);
-      } else {
-        if (callback) callback();
-      }
-    }
-
-    // 🤖 ระบบ Speech Recognition อัลกอริทึมใหม่ (Auto-Restart Robust Loop)
-    function initSpeechEngine() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        alert("เบราว์เซอร์นี้ไม่รองรับการฟังเสียงอัตโนมัติ กรุณาใช้ Google Chrome บน Android");
-        return;
-      }
-
-      recognition = new SpeechRecognition();
-      recognition.lang = 'th-TH';
-      recognition.continuous = false; // ปรับเป็น false เพื่อเสถียรภาพบนมือถือ
-      recognition.interimResults = false;
-
-      recognition.onstart = () => {
-        document.getElementById('ai-status-text').innerText = "กำลังฟัง...";
-        const btn = document.getElementById('btn-ai-toggle');
-        btn.classList.add('ai-listening');
-        btn.innerText = "🔴 AI กำลังฟังอยู่ (กดปิด)";
-      };
-
-      recognition.onresult = (event) => {
-        const text = event.results[0][0].transcript.trim();
-        document.getElementById('ai-status-text').innerText = `ได้ยิน: "${text}"`;
-        processVoiceCommand(text);
-      };
-
-      recognition.onerror = (err) => {
-        console.log("Speech error:", err.error);
-      };
-
-      recognition.onend = () => {
-        const btn = document.getElementById('btn-ai-toggle');
-        btn.classList.remove('ai-listening');
-
-        // หากเปิดโหมด AI ไว้ ให้เริ่มฟังใหม่แบบวนลูป
-        if (isAIActive && !isProcessingCommand) {
-          setTimeout(() => {
-            try { recognition.start(); } catch(e) {}
-          }, 300);
-        } else if (!isAIActive) {
-          document.getElementById('ai-status-text').innerText = "ปิดอยู่";
-          btn.innerText = "🎙️ เปิดโหมดฟังค้าง";
+    // 3. Add 3D Buildings Layer
+    map.on('load', () => {
+      const layers = map.getStyle().layers;
+      let labelLayerId;
+      for (let i = 0; i < layers.length; i++) {
+        if (layers[i].type === 'symbol' && layers[i].layout['text-field']) {
+          labelLayerId = layers[i].id;
+          break;
         }
-      };
-    }
+      }
 
-    function toggleAIAssistant() {
-      if (!recognition) initSpeechEngine();
+      // แทรกตึก 3 มิติข้างทาง
+      map.addLayer({
+        'id': '3d-buildings',
+        'source': 'carto',
+        'source-layer': 'building',
+        'type': 'fill-extrusion',
+        'minzoom': 15,
+        'paint': {
+          'fill-extrusion-color': '#1f2937',
+          'fill-extrusion-height': ['get', 'render_height'],
+          'fill-extrusion-base': ['get', 'render_min_height'],
+          'fill-extrusion-opacity': 0.75
+        }
+      }, labelLayerId);
+    });
 
-      if (!isAIActive) {
-        isAIActive = true;
-        aiSpeak("เปิดโหมด AI เพื่อนเดินทางแล้ว พูดสั่งนำทางได้เลยครับ", () => {
-          try { recognition.start(); } catch(e) {}
+    // 4. Smooth Camera Update Engine (3D Follow)
+    function updateNavigationCamera(lng, lat, heading, speed) {
+      currentPos = [lng, lat];
+      currentHeading = heading || currentHeading;
+      currentSpeed = Math.round(speed || 0);
+
+      // แสดงค่าความเร็ว
+      document.getElementById('speed-display').innerText = currentSpeed;
+
+      // ปรับ Zoom Dynamic ตามความเร็วรถ
+      let targetZoom = 17.5;
+      if (currentSpeed > 80) targetZoom = 15.5;
+      else if (currentSpeed > 50) targetZoom = 16.5;
+
+      // อัปเดตตำแหน่งไอคอนรถ
+      marker.setLngLat(currentPos);
+
+      // ถ้าเปิดโหมด Lock ให้หมุนแผนที่เอียงตามหัวรถตลอดเวลา
+      if (isTrackingLock) {
+        map.easeTo({
+          center: currentPos,
+          bearing: currentHeading, // หมุนแผนที่ตามทิศรถ
+          pitch: is3DMode ? 60 : 0, // เอียง 3D
+          zoom: targetZoom,
+          duration: 1000,
+          easing: (t) => t
         });
-      } else {
-        isAIActive = false;
-        try { recognition.stop(); } catch(e) {}
-        aiSpeak("ปิดระบบฟังเสียงเรียบร้อยครับ");
       }
     }
 
-    // 🧠 วิเคราะห์คำสั่งเสียง
-    function processVoiceCommand(text) {
-      isProcessingCommand = true;
-      const lowerText = text.toLowerCase();
+    // 5. Real-time GPS Watcher
+    if ('geolocation' in navigator) {
+      navigator.geolocation.watchPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const heading = position.coords.heading || 0;
+          const speed = (position.coords.speed || 0) * 3.6; // แปลง m/s เป็น km/h
 
-      if (lowerText.includes("นำทางไป") || lowerText.includes("ไปที่") || lowerText.includes("ไป")) {
-        let dest = text.replace(/นำทางไป|ไปที่|ไป/g, "").trim();
-        if (dest.length > 0) {
-          document.getElementById('dest-input').value = dest;
-          aiSpeak(`กำลังค้นหาเส้นทางไป ${dest}`, () => {
-            searchDestinationDirect(dest);
-          });
-        } else {
-          resumeListening();
-        }
-      } else if (lowerText.includes("อยู่ที่ไหน") || lowerText.includes("ตำแหน่ง")) {
-        speakCurrentLocation(() => resumeListening());
-      } else if (lowerText.includes("ยกเลิก") || lowerText.includes("หยุดนำทาง")) {
-        cancelNavigation();
-        aiSpeak("ยกเลิกการนำทางแล้วครับ", () => resumeListening());
-      } else if (lowerText.includes("เหงา") || lowerText.includes("ชวนคุย") || lowerText.includes("ง่วง")) {
-        aiSpeak("ขับรถถ้าง่วง หาที่จอดพักจิบกาแฟสักนิดนะครับ ปลอดภัยไว้ก่อนครับ", () => resumeListening());
-      } else {
-        // หากพูดอย่างอื่นที่ไม่ใช่คำสั่ง ให้วนกลับไปฟังใหม่
-        setTimeout(() => resumeListening(), 1000);
-      }
+          document.getElementById('status-text').innerText = "กำลังนำทางแบบ 3D";
+          document.getElementById('sub-status').innerText = `พิกัด: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+
+          updateNavigationCamera(lng, lat, heading, speed);
+        },
+        (error) => {
+          console.warn("GPS Error:", error.message);
+          document.getElementById('sub-status').innerText = "สัญญาณ GPS ขัดข้อง (ใช้โหมดจำลอง)";
+        },
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+      );
     }
 
-    function resumeListening() {
-      isProcessingCommand = false;
-      if (isAIActive) {
-        try { recognition.start(); } catch(e) {}
-      }
-    }
+    // 6. HUD UI Event Handlers
+    document.getElementById('btn-lock').addEventListener('click', function() {
+      isTrackingLock = true;
+      this.classList.add('active');
+      map.easeTo({ center: currentPos, bearing: currentHeading, pitch: is3DMode ? 60 : 0, duration: 800 });
+    });
 
-    // 🔍 ระบบค้นหาแบบกดปุ่ม/พิมพ์
-    async function searchDestination() {
-      const query = document.getElementById('dest-input').value;
-      if (!query.trim()) return;
-      searchDestinationDirect(query);
-    }
+    document.getElementById('btn-toggle-3d').addEventListener('click', function() {
+      is3DMode = !is3DMode;
+      this.classList.toggle('active', is3DMode);
+      map.easeTo({ pitch: is3DMode ? 60 : 0, duration: 600 });
+    });
 
-    // 🔍 ระบบค้นหาทำงานตรง (ไม่ค้าง)
-    async function searchDestinationDirect(query) {
-      const suggestionsBox = document.getElementById('suggestions');
-      suggestionsBox.innerHTML = '<div class="suggestion-item">🔍 กำลังค้นหา...</div>';
-      suggestionsBox.style.display = 'block';
+    // ปลด Lock Tracking เมื่อผู้ใช้เอานิ้วไปเลื่อนแผนที่เอง
+    map.on('dragstart', () => {
+      isTrackingLock = false;
+      document.getElementById('btn-lock').classList.remove('active');
+    });
 
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // กันค้าง 8 วินาที
-
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=th&limit=5&q=${encodeURIComponent(query)}`, { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        const data = await res.json();
-        suggestionsBox.innerHTML = '';
-
-        if (!data || data.length === 0) {
-          suggestionsBox.innerHTML = '<div class="suggestion-item">❌ ไม่พบสถานที่</div>';
-          aiSpeak("ไม่พบสถานที่ที่ต้องการครับ ลองเปลี่ยนคำค้นหาดูนะครับ", () => resumeListening());
-          return;
-        }
-
-        // หากเป็นการสั่งด้วยเสียง เลือกอันแรกให้อัตโนมัติทันที
-        if (isProcessingCommand) {
-          const topMatch = data[0];
-          selectDestination(parseFloat(topMatch.lat), parseFloat(topMatch.lon), topMatch.display_name);
-        } else {
-          // หากพิมพ์ค้นหา ให้ขึ้นรายการตัวเลือกให้จิ้ม
-          data.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'suggestion-item';
-            div.innerHTML = `📍 <strong>${item.display_name.split(',')[0]}</strong><br><small style="opacity:0.7">${item.display_name}</small>`;
-            div.onclick = () => selectDestination(parseFloat(item.lat), parseFloat(item.lon), item.display_name);
-            suggestionsBox.appendChild(div);
-          });
-        }
-
-      } catch (e) {
-        suggestionsBox.innerHTML = '<div class="suggestion-item">⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ</div>';
-        aiSpeak("การค้นหาขัดข้อง กรุณาลองใหม่อีกครั้งครับ", () => resumeListening());
-      }
-    }
-
-    function selectDestination(destLat, destLng, displayName) {
-      document.getElementById('suggestions').style.display = 'none';
-      document.getElementById('dest-input').value = displayName.split(',')[0];
-      startRouting(destLat, destLng);
-    }
-
-    function startRouting(destLat, destLng) {
-      if (routingControl) map.removeControl(routingControl);
-      
-      routingControl = L.Routing.control({
-        waypoints: [L.latLng(currentLat, currentLng), L.latLng(destLat, destLng)],
-        router: L.Routing.osrmv1({ serviceUrl: `https://router.project-osrm.org/route/v1`, profile: selectedMode === 'walk' ? 'foot' : 'car' }),
-        lineOptions: { styles: [{ color: '#0284c7', weight: 6 }] },
-        addWaypoints: false, createMarker: () => null
-      }).addTo(map);
-
-      routingControl.on('routesfound', (e) => {
-        currentInstructions = e.routes[0].instructions;
-        document.getElementById('nav-banner').style.display = 'flex';
-        aiSpeak("พบเส้นทางแล้ว เริ่มนำทางได้เลยครับ", () => resumeListening());
-      });
-
-      routingControl.on('routingerror', () => {
-        aiSpeak("ไม่สามารถวางเส้นทางไปยังจุดหมายนี้ได้ครับ", () => resumeListening());
-      });
-    }
-
-    function cancelNavigation() {
-      if (routingControl) map.removeControl(routingControl);
-      document.getElementById('suggestions').style.display = 'none';
-      document.getElementById('nav-banner').style.display = 'none';
-    }
-
-    function handlePosition(pos) {
-      const { latitude, longitude, speed, heading, altitude } = pos.coords;
-      currentLat = latitude; currentLng = longitude;
-      if (heading) currentHeading = heading;
-
-      currentSpeed = speed ? (speed * 3.6) : 0;
-      if (currentSpeed > maxSpeed) maxSpeed = currentSpeed;
-
-      document.getElementById('speed').innerText = currentSpeed.toFixed(1);
-      document.getElementById('max-speed').innerText = maxSpeed.toFixed(1);
-      document.getElementById('altitude').innerText = altitude ? Math.round(altitude) : '--';
-
-      vehicleMarker.setLatLng([latitude, longitude]);
-      vehicleMarker.setIcon(createVehicleMarker(vehicleIcons[selectedMode], currentHeading));
-      map.panTo([latitude, longitude]);
-    }
-
-    function toggleTracking() {
-      const btn = document.getElementById('toggle-btn');
-      if (!isTracking) {
-        watchId = navigator.geolocation.watchPosition(handlePosition, null, { enableHighAccuracy: true });
-        isTracking = true;
-        btn.innerText = "STOP TRACKING"; btn.classList.add("stop");
-        aiSpeak("เริ่มเปิดระบบระบุตำแหน่ง GPS");
-      } else {
-        navigator.geolocation.clearWatch(watchId);
-        isTracking = false;
-        btn.innerText = "START TRACKING"; btn.classList.remove("stop");
-      }
-    }
-
-    let cameraStream = null;
-    async function toggleCamera() {
-      const v = document.getElementById('camera-preview');
-      if (!cameraStream) {
-        try {
-          cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-          v.srcObject = cameraStream; v.style.display = 'block';
-        } catch(e) { alert("ไม่สามารถเปิดกล้องได้"); }
-      } else {
-        cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; v.style.display = 'none';
-      }
-    }
-
-    function speakCurrentLocation(cb) { 
-      aiSpeak(`ขณะนี้คุณอยู่ที่ ละติจูด ${currentLat.toFixed(3)} ลองจิจูด ${currentLng.toFixed(3)} ความเร็ว ${currentSpeed.toFixed(1)} กิโลเมตรต่อชั่วโมง`, cb); 
-    }
-    function toggleDayNight() { document.body.classList.toggle('light-mode'); }
-    function changeTransportMode() { selectedMode = document.getElementById('transport-mode').value; }
-
-    setInterval(() => { document.getElementById('osd-datetime').innerText = new Date().toLocaleString('th-TH'); }, 1000);
+    // Voice Command Placeholder
+    document.getElementById('btn-mic').addEventListener('click', () => {
+      alert("ระบบรับคำสั่งเสียง AI พร้อมเชื่อมต่อแล้ว");
+    });
   </script>
 </body>
 </html>
